@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap');
@@ -300,15 +301,22 @@
                     条码数据
                     <span id="dataNote" class="float-right text-xs normal-case font-normal text-gray-400">支持批量生成</span>
                 </label>
-                <textarea id="inputData" oninput="debounceRender()" onkeyup="debounceRender()" onpaste="setTimeout(debounceRender, 10)" class="flex-1 min-h-[200px] w-full p-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm font-mono leading-relaxed" placeholder="条码数据"></textarea>
+                <textarea id="inputData" oninput="debounceRender()" onkeyup="debounceRender()" onpaste="setTimeout(debounceRender, 10)" class="flex-1 min-h-[200px] w-full p-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm leading-relaxed" placeholder="条码数据"></textarea>
             </div>
         </div>
 
         <div class="p-4 border-t border-gray-200 bg-white">
+            <div class="space-y-2">
+                <input id="batchFileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="onBatchFileChange(event)">
+                <button id="btn-batch-print" onclick="triggerBatchFile()" class="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-md text-sm font-semibold text-white bg-black hover:bg-gray-900 hover:scale-[1.02] hover:shadow-lg active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition transform">
+                    <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V2h12v7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 14h12v8H6z"/></svg>
+                    批量打印
+                </button>
                 <button id="btn-print" onclick="handlePrint()" class="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-lg text-sm font-semibold text-white bg-gray-900 hover:bg-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-all transform hover:scale-[1.02]">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                 打印标签
             </button>
+            </div>
         </div>
     </div>
 
@@ -338,8 +346,8 @@
                 size4x6: '4x6',
                 size4x2: '4x2',
                 printMode: '打印生成方式',
-                separate: '分开生成',
-                together: '同页生成',
+                separate: '分页',
+                together: '同页',
                 title: '标题',
                 titlePlaceholder: '输入标题',
                 text: '文本',
@@ -832,6 +840,287 @@
                     container.innerHTML = `<div class="text-red-500 p-4">渲染错误: ${e.message}</div>`;
                 }
             }
+        }
+
+        // --- 批量导入并打印（Excel） ---
+        function triggerBatchFile() {
+            const input = document.getElementById('batchFileInput');
+            if (input) input.click();
+        }
+
+        function onBatchFileChange(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = e.target.result;
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    // rows: array of arrays. A: title, B: code1, C: code2, D: text
+                    const entries = [];
+                    for (let r = 0; r < rows.length; r++) {
+                        const row = rows[r];
+                        // skip empty rows
+                        if (!row || row.length === 0) continue;
+                        const title = (row[0] || '').toString().trim();
+                        const code1 = (row[1] || '').toString().trim();
+                        const code2 = (row[2] || '').toString().trim();
+                        const text = (row[3] || '').toString().trim();
+                        // if whole row empty, skip
+                        if (!title && !code1 && !code2 && !text) continue;
+                        const codes = [];
+                        if (code1) codes.push(code1);
+                        if (code2) codes.push(code2);
+                        // Only add entry if there is at least one code or text/title (keeps semantics)
+                        if (codes.length > 0) {
+                            entries.push({ title, codes, text });
+                        } else if (title || text) {
+                            // row with only title/text -> treat as placeholder entry
+                            entries.push({ title, codes: [], text });
+                        }
+                    }
+                    // count total codes
+                    const totalCodes = entries.reduce((acc, e) => acc + (e.codes ? e.codes.length : 0), 0);
+                    if (totalCodes === 0 && entries.length === 0) {
+                        alert('未解析到可用数据，请检查 Excel 内容。');
+                        return;
+                    }
+                    renderBatchAndPrint(entries);
+                    // 允许用户再次选择相同文件：清空 file input 的值
+                    const batchInput = document.getElementById('batchFileInput');
+                    if (batchInput) batchInput.value = '';
+                } catch (err) {
+                    console.error('解析 Excel 错误', err);
+                    alert('解析 Excel 出错：' + (err.message || err));
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderBatchAndPrint(entries) {
+            // entries: [{title, codes: [...], text}, ...]
+            const container = document.getElementById('previewArea');
+            if (!container) return;
+            container.innerHTML = '';
+            const sizeClass = currentSize;
+
+            // Build pages:
+            const pages = [];
+            const singles = [];
+            entries.forEach(entry => {
+                const codes = entry.codes || [];
+                if (codes.length === 2) {
+                    // flush singles first
+                    while (singles.length >= 2) {
+                        pages.push({ items: [singles.shift(), singles.shift()] });
+                    }
+                    if (singles.length === 1) {
+                        pages.push({ items: [singles.shift()] });
+                    }
+                    // add the pair as one page
+                    pages.push({ items: [{ title: entry.title, code: codes[0], text: entry.text }, { title: entry.title, code: codes[1], text: entry.text }] });
+                } else if (codes.length === 1) {
+                    singles.push({ title: entry.title, code: codes[0], text: entry.text });
+                } else {
+                    // no codes, treat as a single placeholder
+                    singles.push({ title: entry.title, code: null, text: entry.text });
+                }
+            });
+            // flush remaining singles
+            while (singles.length > 0) {
+                if (singles.length >= 2) pages.push({ items: [singles.shift(), singles.shift()] });
+                else pages.push({ items: [singles.shift()] });
+            }
+
+            const totalCodes = entries.reduce((acc, e) => acc + (e.codes ? e.codes.length : 0), 0);
+            const forceSeparate = (totalCodes === 1);
+
+            if (printMode === 'together' && sizeClass === 'size-4x6' && !forceSeparate) {
+                // render each page (page.items length 1 or 2)
+                pages.forEach(page => {
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = `label-item ${sizeClass} together shadow-md`;
+                    labelDiv.style.height = sizeClass === 'size-4x6' ? '150mm' : '50mm';
+                    const innerDiv = document.createElement('div');
+                    innerDiv.className = "label-content w-full h-full box-border";
+                    // 如果页面内有统一标题，显示一次在页面顶部
+                    const pageTitle = (page.items.map(i => i.title).find(t => t && t.trim() !== '') || '').trim();
+                    if (pageTitle) {
+                        const headerDiv = document.createElement('div');
+                        headerDiv.className = "w-full text-center";
+                        const titleEl = document.createElement('div');
+                        titleEl.innerText = pageTitle;
+                        titleEl.className = "label-title font-bold text-gray-900 break-words leading-tight mb-2";
+                        headerDiv.appendChild(titleEl);
+                        innerDiv.appendChild(headerDiv);
+                    }
+                    const compactGrid = document.createElement('div');
+                    compactGrid.className = "compact-grid";
+                    page.items.forEach(it => {
+                        const codeBox = document.createElement('div');
+                        codeBox.className = "compact-code";
+                        const visualContainer = document.createElement('div');
+                        visualContainer.className = "flex items-center justify-center w-full";
+                        if (it.code) {
+                            if (currentType === 'barcode') {
+                                if (typeof JsBarcode === 'undefined') visualContainer.innerHTML = `<span class="text-red-500 text-xs">条码库未加载</span>`;
+                                else {
+                                    const canvas = document.createElement('canvas');
+                                    try {
+                                        const barHeight = sizeClass === 'size-4x2' ? 40 : 80;
+                                        JsBarcode(canvas, it.code, { format: "CODE128", width: 2, height: barHeight, displayValue: false, margin: 0 });
+                                        canvas.style.maxWidth = "100%";
+                                        canvas.style.height = "auto";
+                                        visualContainer.appendChild(canvas);
+                                    } catch (e) {
+                                        visualContainer.innerHTML = `<span class="text-red-500 text-xs">错误</span>`;
+                                    }
+                                }
+                            } else {
+                                if (typeof QRCode === 'undefined') visualContainer.innerHTML = `<span class="text-red-500 text-xs">二维码库未加载</span>`;
+                                else {
+                                    const qrDiv = document.createElement('div');
+                                    qrDiv.className = 'qr';
+                                    try {
+                                        const qrSize = sizeClass === 'size-4x2' ? 80 : 140;
+                                        new QRCode(qrDiv, { text: it.code, width: qrSize, height: qrSize, correctLevel: QRCode.CorrectLevel.M });
+                                        visualContainer.appendChild(qrDiv);
+                                    } catch (e) {
+                                        visualContainer.innerHTML = `<span class="text-red-500 text-xs">错误</span>`;
+                                    }
+                                }
+                            }
+                            const codeText = document.createElement('div');
+                            codeText.className = "compact-code-text";
+                            codeText.innerText = it.code;
+                            codeBox.appendChild(visualContainer);
+                            codeBox.appendChild(codeText);
+                        } else {
+                            // placeholder-only: 在同页模式不在每个 item 中重复显示 title/text，footer 会统一显示
+                            // 保留空白占位保证布局
+                            const spacer = document.createElement('div');
+                            spacer.style.minHeight = sizeClass === 'size-4x2' ? '30px' : '40px';
+                            codeBox.appendChild(spacer);
+                        }
+                        compactGrid.appendChild(codeBox);
+                    });
+                    innerDiv.appendChild(compactGrid);
+                    // 底部只显示唯一的文本（去重），避免重复显示相同文本两次
+                    const uniqueTexts = Array.from(new Set(page.items.map(i => (i.text || '').trim()).filter(t => t !== '')));
+                    if (uniqueTexts.length > 0) {
+                        const footerDiv = document.createElement('div');
+                        footerDiv.className = "w-full text-center";
+                        const extraTextEl = document.createElement('div');
+                        extraTextEl.innerText = uniqueTexts.join(' / ');
+                        extraTextEl.className = "label-extra-text text-gray-700 break-words leading-relaxed whitespace-pre-line";
+                        footerDiv.appendChild(extraTextEl);
+                        innerDiv.appendChild(footerDiv);
+                    }
+                    labelDiv.appendChild(innerDiv);
+                    container.appendChild(labelDiv);
+                });
+            } else {
+                // separate: render each code as its own label
+                entries.forEach(entry => {
+                    const codes = entry.codes || [];
+                    if (codes.length === 0) {
+                        const labelDiv = document.createElement('div');
+                        labelDiv.className = `label-item ${sizeClass} shadow-md`;
+                        const innerDiv = document.createElement('div');
+                        innerDiv.className = "label-content w-full h-full box-border";
+                        if (entry.title) {
+                            const headerDiv = document.createElement('div');
+                            headerDiv.className = "w-full text-center";
+                            const titleEl = document.createElement('div');
+                            titleEl.innerText = entry.title;
+                            titleEl.className = "label-title font-bold text-gray-900 break-words leading-tight mb-2";
+                            headerDiv.appendChild(titleEl);
+                            innerDiv.appendChild(headerDiv);
+                        }
+                        if (entry.text) {
+                            const footerDiv = document.createElement('div');
+                            footerDiv.className = "w-full text-center";
+                            const extraTextEl = document.createElement('div');
+                            extraTextEl.innerText = entry.text;
+                            extraTextEl.className = "label-extra-text text-gray-700 break-words leading-relaxed whitespace-pre-line";
+                            footerDiv.appendChild(extraTextEl);
+                            innerDiv.appendChild(footerDiv);
+                        }
+                        labelDiv.appendChild(innerDiv);
+                        container.appendChild(labelDiv);
+                    } else {
+                        codes.forEach(code => {
+                            const labelDiv = document.createElement('div');
+                            labelDiv.className = `label-item ${sizeClass} shadow-md`;
+                            const innerDiv = document.createElement('div');
+                            innerDiv.className = "label-content w-full h-full box-border";
+                            if (entry.title) {
+                                const headerDiv = document.createElement('div');
+                                headerDiv.className = "w-full text-center";
+                                const titleEl = document.createElement('div');
+                                titleEl.innerText = entry.title;
+                                titleEl.className = "label-title font-bold text-gray-900 break-words leading-tight mb-2";
+                                headerDiv.appendChild(titleEl);
+                                innerDiv.appendChild(headerDiv);
+                            }
+                            const codeContainer = document.createElement('div');
+                            codeContainer.className = "flex-1 flex items-center justify-center w-full overflow-hidden";
+                            codeContainer.style.minHeight = sizeClass === 'size-4x2' ? '30px' : '100px';
+                            if (currentType === 'barcode') {
+                                if (typeof JsBarcode === 'undefined') {
+                                    codeContainer.innerHTML = `<span class="text-red-500 text-xs">条码库未加载，请刷新页面</span>`;
+                                } else {
+                                    const canvas = document.createElement('canvas');
+                                    try {
+                                        const barHeight = sizeClass === 'size-4x2' ? 40 : 80;
+                                        JsBarcode(canvas, code, { format: "CODE128", width: 2, height: barHeight, displayValue: false, margin: 0 });
+                                        canvas.style.maxWidth = "100%";
+                                        canvas.style.height = "auto";
+                                        codeContainer.appendChild(canvas);
+                                    } catch (e) {
+                                        codeContainer.innerHTML = `<span class="text-red-500 text-xs">错误: ${e.message || '无效字符'}</span>`;
+                                    }
+                                }
+                            } else {
+                                if (typeof QRCode === 'undefined') {
+                                    codeContainer.innerHTML = `<span class="text-red-500 text-xs">二维码库未加载，请刷新页面</span>`;
+                                } else {
+                                    const qrDiv = document.createElement('div');
+                                    codeContainer.appendChild(qrDiv);
+                                    const qrSize = sizeClass === 'size-4x2' ? 80 : 180;
+                                    try {
+                                        qrDiv.innerHTML = '';
+                                        new QRCode(qrDiv, { text: code, width: qrSize, height: qrSize, correctLevel: QRCode.CorrectLevel.M });
+                                    } catch (e) {
+                                        codeContainer.innerHTML = `<span class="text-red-500 text-xs">错误: ${e.message || '生成失败'}</span>`;
+                                    }
+                                }
+                            }
+                            innerDiv.appendChild(codeContainer);
+                            const footerDiv = document.createElement('div');
+                            footerDiv.className = "w-full text-center";
+                            const codeText = document.createElement('div');
+                            codeText.innerText = code;
+                            codeText.className = "label-code-text font-mono font-semibold text-gray-600 tracking-wider break-all";
+                            footerDiv.appendChild(codeText);
+                            if (entry.text) {
+                                const extraTextEl = document.createElement('div');
+                                extraTextEl.innerText = entry.text;
+                                extraTextEl.className = "label-extra-text text-gray-700 break-words leading-relaxed whitespace-pre-line";
+                                footerDiv.appendChild(extraTextEl);
+                            }
+                            innerDiv.appendChild(footerDiv);
+                            labelDiv.appendChild(innerDiv);
+                            container.appendChild(labelDiv);
+                        });
+                    }
+                });
+            }
+            // wait for render (for QR codes) then print
+            setTimeout(() => { window.print(); }, 800);
         }
 
         // 页面加载完成后初始化
