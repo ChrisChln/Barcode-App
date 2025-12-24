@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BarcodeApp</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* 打印核心样式 */
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            html, body { 
+                background: white !important; 
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+            }
+            
+            body {
+                display: block !important;
+            }
+            
+            .no-print { 
+                display: none !important; 
+            }
+            
+            /* 隐藏左侧面板，仅保留右侧预览区域用于打印 */
+            body > div:first-child {
+                display: none !important;
+            }
+
+            /* 打印时让右侧预览区域去掉内边距，占满整页宽度 */
+            .flex-1.bg-gray-100 {
+                padding: 0 !important;
+                justify-content: flex-start !important;
+                align-items: stretch !important;
+                background: white !important;
+            }
+
+            /* 打印时预览容器和每个标签水平居中 */
+            .print-area {
+                align-items: center !important;
+                width: 100mm !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+            }
+
+            .label-item {
+                margin-left: auto !important;
+                margin-right: auto !important;
+            }
+
+            /* 打印时取消滚动和滚动条，只保留内容 */
+            .overflow-auto {
+                overflow: visible !important;
+            }
+            .overflow-auto::-webkit-scrollbar {
+                display: none !important;
+            }
+            
+            /* 只显示预览区域内的标签 */
+            .print-area { 
+                display: block !important; 
+                position: relative !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                gap: 0 !important;
+            }
+            
+            .label-item { 
+                page-break-after: always !important; 
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                border: none !important;
+                box-shadow: none !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+                width: 100mm !important;
+                height: auto !important;
+                display: block !important;
+            }
+            
+            /* 修正打印时的内边距，确保内容不贴边 */
+            .label-content { 
+                padding: 4mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+                height: 100% !important;
+            }
+            
+            /* 4x2 尺寸的打印布局优化 */
+            .size-4x2 .label-content {
+                /* 4x2 物理高度较小，适当减小上下内边距，避免标题/文字被打印机边距裁剪 */
+                padding: 2mm 3mm !important;
+            }
+            .size-4x2 .label-title {
+                font-size: 11px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-4x2 .label-code-text {
+                font-size: 10px !important;
+                margin-top: 1mm !important;
+            }
+            .size-4x2 .label-extra-text {
+                font-size: 9px !important;
+                margin-top: 1mm !important;
+            }
+            
+            /* 4x6 尺寸的打印布局优化 */
+            .size-4x6 .label-content {
+                padding: 5mm !important;
+            }
+            
+            /* 合并模式打印时：同一页内换行排列小块条码 */
+            .label-item.together {
+                page-break-after: avoid !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                display: block !important;
+                padding: 4mm !important;
+                box-sizing: border-box !important;
+                height: 150mm !important; /* 强制每个合并页面与物理页等高，避免内容跑到下一页 */
+            }
+            .label-item.together .compact-grid {
+                display: flex !important;
+                flex-direction: column !important; /* 纵向排列，每页最多两个 */
+                gap: 6mm !important;
+                justify-content: center !important;
+                align-items: stretch !important;
+                flex: 1 1 auto !important;
+                page-break-inside: avoid !important;
+            }
+            .label-item.together .compact-code {
+                width: 100% !important; /* 不缩小，使用单页宽度 */
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                box-sizing: border-box !important;
+                padding: 4mm 0 !important;
+                page-break-inside: avoid !important;
+                flex: 0 0 auto !important;
+            }
+            .label-item.together .compact-code canvas,
+            .label-item.together .compact-code > div.qr {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+            .label-item.together .compact-code .compact-code-text {
+                font-family: monospace !important;
+                font-size: 12px !important;
+                margin-top: 6px !important;
+                word-break: break-all !important;
+                text-align: center !important;
+            }
+            
+            /* 确保预览区域在打印时可见 */
+            #previewArea {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+            }
+        }
+
+        /* 标签物理尺寸定义 */
+        .size-4x6 { width: 100mm; height: 150mm; }
+        .size-4x2 { width: 100mm; height: 50mm; }
+        
+        /* 打印机页面定义 */
+        @media print {
+            @page { 
+                size: 100mm 150mm; 
+                margin: 0; 
+            }
+            
+            @page:first {
+                size: 100mm 150mm;
+                margin: 0;
+            }
+        }
+        
+
+        /* 预览样式 */
+        .label-item {
+            background: white;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-sizing: border-box;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        
+        .label-content {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        /* 预览时的内边距（打印时会被 @media print 中的设置覆盖） */
+        .size-4x2 .label-content {
+            padding: 10px;
+        }
+
+        .size-4x6 .label-content {
+            padding: 18px;
+        }
+
+        /* 针对 4x2 尺寸的紧凑布局调整 */
+        .size-4x2 .label-title { font-size: 14px; line-height: 1.2; max-height: 36px; overflow: hidden; }
+        .size-4x2 .label-code-text { font-size: 12px; margin-top: 2px; }
+        .size-4x2 .label-extra-text { font-size: 10px; line-height: 1.3; margin-top: 4px; }
+        
+        /* 针对 4x6 尺寸的宽敞布局调整 */
+        .size-4x6 .label-title { font-size: 22px; line-height: 1.3; }
+        .size-4x6 .label-code-text { font-size: 16px; margin-top: 10px; }
+        .size-4x6 .label-extra-text { font-size: 14px; line-height: 1.5; margin-top: 12px; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex overflow-hidden text-gray-800">
+
+    <div class="w-[400px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col z-20 no-print shadow-2xl">
+        <div class="p-6 border-b border-gray-100 bg-gray-50">
+            <div class="flex items-center gap-2">
+                <h1 class="text-xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                    LabelGen <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Pro</span>
+                </h1>
+                <div class="ml-auto">
+                    <button id="btn-lang-toggle" onclick="toggleLang()" class="px-3 py-1 rounded-md border text-sm bg-white hover:bg-gray-50">中 / EN</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 flex-1 overflow-y-auto space-y-6">
+            <div class="space-y-4">
+                <div>
+                    <label id="label-gen-mode" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">生成模式</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="setType('barcode')" id="btn-barcode" class="py-2 text-sm font-medium rounded-lg border transition-all text-center">条形码</button>
+                        <button onclick="setType('qrcode')" id="btn-qrcode" class="py-2 text-sm font-medium rounded-lg border transition-all text-center">二维码</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label id="label-paper-size" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">纸张尺寸</label>
+                    <div class="grid grid-cols-2 gap-2" id="sizeButtons">
+                        <button type="button" onclick="setSize('size-4x6')" id="btn-size-4x6" class="py-2 text-sm font-medium rounded-lg border transition-all text-center">
+                            4x6
+                        </button>
+                        <button type="button" onclick="setSize('size-4x2')" id="btn-size-4x2" class="py-2 text-sm font-medium rounded-lg border transition-all text-center">
+                            4x2
+                        </button>
+                    </div>
+                </div>
+            
+            <div>
+                <label id="label-print-mode" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">打印生成方式</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" onclick="setPrintMode('separate')" id="btn-print-separate" class="py-2 text-sm font-medium rounded-lg border transition-all text-center">分页</button>
+                    <button type="button" onclick="setPrintMode('together')" id="btn-print-together" class="py-2 text-sm font-medium rounded-lg border transition-all text-center">同页</button>
+                </div>
+            </div>
+                
+                <div>
+                    <label id="label-title" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">标题</label>
+                    <input type="text" id="commonTitle" oninput="debounceRender()" onkeyup="debounceRender()" class="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm" placeholder="输入标题">
+                </div>
+                
+                <div>
+                    <label id="label-text" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">文本</label>
+                    <textarea id="extraText" oninput="debounceRender()" onkeyup="debounceRender()" rows="3" class="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm resize-none" placeholder="输入文本"></textarea>
+                </div>
+            </div>
+
+            <hr class="border-gray-100">
+
+            <div class="flex-1 flex flex-col">
+                <label id="label-data" class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    条码数据
+                    <span id="dataNote" class="float-right text-xs normal-case font-normal text-gray-400">支持批量生成</span>
+                </label>
+                <textarea id="inputData" oninput="debounceRender()" onkeyup="debounceRender()" onpaste="setTimeout(debounceRender, 10)" class="flex-1 min-h-[200px] w-full p-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm font-mono leading-relaxed" placeholder="条码数据"></textarea>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-gray-200 bg-white">
+                <button id="btn-print" onclick="handlePrint()" class="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-lg text-sm font-semibold text-white bg-gray-900 hover:bg-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-all transform hover:scale-[1.02]">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                打印标签
+            </button>
+        </div>
+    </div>
+
+    <div class="flex-1 bg-gray-100 overflow-auto p-10 flex justify-center items-start">
+        <div id="previewArea" class="print-area flex flex-col items-center gap-6 w-full">
+            <div class="text-gray-400 mt-32 flex flex-col items-center animate-pulse no-print">
+                <svg class="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <span id="previewPlaceholderText">请在左侧输入数据...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentType = 'barcode';
+        let timer;
+        let librariesLoaded = false;
+        let currentSize = 'size-4x6';
+        let printMode = 'separate'; // 'separate' 或 'together'
+        let currentLang = 'zh';
+
+        const i18n = {
+            zh: {
+                genMode: '生成模式',
+                barcode: '条形码',
+                qrcode: '二维码',
+                paperSize: '纸张尺寸',
+                size4x6: '4x6',
+                size4x2: '4x2',
+                printMode: '打印生成方式',
+                separate: '分开生成',
+                together: '同页生成',
+                title: '标题',
+                titlePlaceholder: '输入标题',
+                text: '文本',
+                textPlaceholder: '输入文本',
+                dataLabel: '条码数据',
+                dataNote: '支持批量生成',
+                dataPlaceholder: '条码数据',
+                printButton: '打印标签',
+                previewPlaceholder: '请在左侧输入数据...',
+                langToggle: '中 / EN'
+            },
+            en: {
+                genMode: 'Mode',
+                barcode: 'Barcode',
+                qrcode: 'QR Code',
+                paperSize: 'Paper Size',
+                size4x6: '4x6',
+                size4x2: '4x2',
+                printMode: 'Print Mode',
+                separate: 'Separate',
+                together: 'Same Page',
+                title: 'Title',
+                titlePlaceholder: 'Enter title',
+                text: 'Text',
+                textPlaceholder: 'Enter text',
+                dataLabel: 'Barcode data',
+                dataNote: 'Supports bulk generation',
+                dataPlaceholder: 'Barcode data',
+                printButton: 'Print labels',
+                previewPlaceholder: 'Please enter data on the left...',
+                langToggle: 'EN / 中'
+            }
+        };
+
+        function toggleLang() {
+            setLanguage(currentLang === 'zh' ? 'en' : 'zh');
+        }
+
+        function setLanguage(lang) {
+            currentLang = (lang === 'en' ? 'en' : 'zh');
+            updateLanguage();
+        }
+
+        function updateLanguage() {
+            const t = i18n[currentLang];
+            const safeGet = id => document.getElementById(id);
+            if (safeGet('label-gen-mode')) safeGet('label-gen-mode').innerText = t.genMode;
+            if (safeGet('btn-barcode')) safeGet('btn-barcode').innerText = t.barcode;
+            if (safeGet('btn-qrcode')) safeGet('btn-qrcode').innerText = t.qrcode;
+            if (safeGet('label-paper-size')) safeGet('label-paper-size').innerText = t.paperSize;
+            if (safeGet('btn-size-4x6')) safeGet('btn-size-4x6').innerText = t.size4x6;
+            if (safeGet('btn-size-4x2')) safeGet('btn-size-4x2').innerText = t.size4x2;
+            if (safeGet('label-print-mode')) safeGet('label-print-mode').innerText = t.printMode;
+            if (safeGet('btn-print-separate')) safeGet('btn-print-separate').innerText = t.separate;
+            if (safeGet('btn-print-together')) safeGet('btn-print-together').innerText = t.together;
+            if (safeGet('label-title')) safeGet('label-title').innerText = t.title;
+            if (safeGet('commonTitle')) safeGet('commonTitle').placeholder = t.titlePlaceholder;
+            if (safeGet('label-text')) safeGet('label-text').innerText = t.text;
+            if (safeGet('extraText')) safeGet('extraText').placeholder = t.textPlaceholder;
+            if (safeGet('label-data')) safeGet('label-data').childNodes[0].nodeValue = t.dataLabel + ' ';
+            if (safeGet('dataNote')) safeGet('dataNote').innerText = t.dataNote;
+            if (safeGet('inputData')) safeGet('inputData').placeholder = t.dataPlaceholder;
+            if (safeGet('btn-print')) safeGet('btn-print').childNodes[2] && (safeGet('btn-print').childNodes[2].nodeValue = ' ' + t.printButton);
+            if (safeGet('previewPlaceholderText')) safeGet('previewPlaceholderText').innerText = t.previewPlaceholder;
+            if (safeGet('btn-lang-toggle')) safeGet('btn-lang-toggle').innerText = t.langToggle;
+        }
+
+        // 检查库是否加载完成
+        function checkLibraries() {
+            const jsBarcodeReady = typeof JsBarcode !== 'undefined';
+            const qrCodeReady = typeof QRCode !== 'undefined';
+            if (jsBarcodeReady && qrCodeReady) {
+                librariesLoaded = true;
+                return true;
+            }
+            return false;
+        }
+
+        // 等待库加载
+        function waitForLibraries(callback, maxAttempts = 50) {
+            let attempts = 0;
+            const checkInterval = setInterval(() => {
+                attempts++;
+                if (checkLibraries() || attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    if (librariesLoaded) {
+                        console.log('所有库已加载完成');
+                    } else {
+                        console.warn('库加载超时，但继续执行');
+                    }
+                    callback();
+                }
+            }, 100);
+        }
+
+        // 初始化
+        function init() {
+            console.log('初始化应用');
+            updateTypeButtons();
+            updateSizeButtons();
+            updatePrintModeButtons();
+            updateLanguage();
+            // 立即渲染一次，不等待库加载
+            renderLabels();
+        }
+
+        function setPrintMode(mode) {
+            printMode = mode === 'together' ? 'together' : 'separate';
+            updatePrintModeButtons();
+            renderLabels();
+        }
+
+        function updatePrintModeButtons() {
+            const btnSep = document.getElementById('btn-print-separate');
+            const btnTog = document.getElementById('btn-print-together');
+            if (!btnSep || !btnTog) return;
+
+            const activeClass = "bg-blue-50 border-blue-200 text-blue-700 shadow-sm ring-1 ring-blue-200";
+            const inactiveClass = "bg-white border-gray-200 text-gray-600 hover:bg-gray-50";
+
+            if (printMode === 'separate') {
+                btnSep.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${activeClass}`;
+                btnTog.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${inactiveClass}`;
+            } else {
+                btnTog.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${activeClass}`;
+                btnSep.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${inactiveClass}`;
+            }
+        }
+
+        function setType(type) {
+            currentType = type;
+            updateTypeButtons();
+            renderLabels();
+        }
+
+        function setSize(size) {
+            currentSize = size;
+            updateSizeButtons();
+            renderLabels();
+        }
+
+        function updateTypeButtons() {
+            const btnBar = document.getElementById('btn-barcode');
+            const btnQr = document.getElementById('btn-qrcode');
+            if (!btnBar || !btnQr) return;
+            
+            const activeClass = "bg-blue-50 border-blue-200 text-blue-700 shadow-sm ring-1 ring-blue-200";
+            const inactiveClass = "bg-white border-gray-200 text-gray-600 hover:bg-gray-50";
+
+            if (currentType === 'barcode') {
+                btnBar.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${activeClass}`;
+                btnQr.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${inactiveClass}`;
+            } else {
+                btnQr.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${activeClass}`;
+                btnBar.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${inactiveClass}`;
+            }
+        }
+
+        function updateSizeButtons() {
+            const btn4x6 = document.getElementById('btn-size-4x6');
+            const btn4x2 = document.getElementById('btn-size-4x2');
+            if (!btn4x6 || !btn4x2) return;
+
+            const activeClass = "bg-blue-50 border-blue-200 text-blue-700 shadow-sm ring-1 ring-blue-200";
+            const inactiveClass = "bg-white border-gray-200 text-gray-600 hover:bg-gray-50";
+
+            if (currentSize === 'size-4x6') {
+                btn4x6.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${activeClass}`;
+                btn4x2.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${inactiveClass}`;
+            } else {
+                btn4x2.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${activeClass}`;
+                btn4x6.className = `flex-1 py-2 text-sm font-medium rounded-lg border transition-all text-center ${inactiveClass}`;
+            }
+        }
+
+        function debounceRender() {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                renderLabels();
+            }, 300);
+        }
+        
+        function handlePrint() {
+            console.log('准备打印');
+            // 立即渲染一次，确保内容是最新的
+            renderLabels();
+            // 等待渲染完成后再打印（增加等待时间确保条码/二维码完全渲染）
+            setTimeout(() => {
+                console.log('开始打印');
+                window.print();
+            }, 800);
+        }
+
+        function renderLabels() {
+            try {
+                const input = document.getElementById('inputData');
+                const titleInput = document.getElementById('commonTitle');
+                const extraTextInput = document.getElementById('extraText');
+                const container = document.getElementById('previewArea');
+                
+                if (!input || !container) {
+                    console.error('无法找到必要的DOM元素', {input, container});
+                    return;
+                }
+                
+                const inputValue = input.value || '';
+                const titleValue = titleInput ? titleInput.value || '' : '';
+                const extraTextValue = extraTextInput ? extraTextInput.value || '' : '';
+                const sizeClass = currentSize;
+                
+                console.log('开始渲染标签', {
+                    inputValue,
+                    titleValue,
+                    sizeClass,
+                    currentType,
+                    jsBarcodeReady: typeof JsBarcode !== 'undefined',
+                    qrCodeReady: typeof QRCode !== 'undefined'
+                });
+                
+                // 设置打印页面尺寸
+                let style = document.getElementById('print-page-style');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'print-page-style';
+                    document.head.appendChild(style);
+                }
+                
+                if (sizeClass === 'size-4x2') {
+                    document.body.classList.add('printing-4x2');
+                    style.textContent = '@media print { @page { size: 100mm 50mm; margin: 0; } }';
+                } else {
+                    document.body.classList.remove('printing-4x2');
+                    style.textContent = '@media print { @page { size: 100mm 150mm; margin: 0; } }';
+                }
+
+                // 清空容器
+                container.innerHTML = '';
+                
+                // 如果是合并生成模式并且是 4x6 纸张，则把所有码生成到同一页内换行排列（只包含码图和码文本）
+                if (printMode === 'together' && sizeClass === 'size-4x6') {
+                    // 基于输入值构建真实行集合，避免在声明 `lines` 前引用它
+                    const realLines = inputValue.split('\n').map(l => l.trim()).filter(l => l !== '');
+                    if (realLines.length > 0) {
+                        const chunkSize = 2; // 每页最多两个
+                        for (let i = 0; i < realLines.length; i += chunkSize) {
+                            const chunk = realLines.slice(i, i + chunkSize);
+                            const labelDiv = document.createElement('div');
+                            labelDiv.className = `label-item ${sizeClass} together shadow-md`;
+                            // 强制设置物理高度，确保 header/grid/footer 在同一页内布局
+                            if (sizeClass === 'size-4x6') {
+                                labelDiv.style.height = '150mm';
+                            } else if (sizeClass === 'size-4x2') {
+                                labelDiv.style.height = '50mm';
+                            }
+
+                            const innerDiv = document.createElement('div');
+                            innerDiv.className = "label-content w-full h-full box-border";
+
+                            // 如果有标题则放在每页顶部
+                            if (titleValue) {
+                                const headerDiv = document.createElement('div');
+                                headerDiv.className = "w-full text-center";
+                                const titleEl = document.createElement('div');
+                                titleEl.innerText = titleValue;
+                                titleEl.className = "label-title font-bold text-gray-900 break-words leading-tight mb-2";
+                                headerDiv.appendChild(titleEl);
+                                innerDiv.appendChild(headerDiv);
+                            }
+
+                            const compactGrid = document.createElement('div');
+                            compactGrid.className = "compact-grid";
+
+                            chunk.forEach((text) => {
+                                const codeBox = document.createElement('div');
+                                codeBox.className = "compact-code";
+
+                                const visualContainer = document.createElement('div');
+                                visualContainer.className = "flex items-center justify-center w-full";
+
+                                // 生成条码或二维码（保持与单页相同大小，不缩小）
+                                if (currentType === 'barcode') {
+                                    if (typeof JsBarcode === 'undefined') {
+                                        visualContainer.innerHTML = `<span class="text-red-500 text-xs">条码库未加载</span>`;
+                                    } else {
+                                        const canvas = document.createElement('canvas');
+                                        try {
+                                            const barHeight = sizeClass === 'size-4x2' ? 40 : 80;
+                                            JsBarcode(canvas, text, {
+                                                format: "CODE128",
+                                                width: 2,
+                                                height: barHeight,
+                                                displayValue: false,
+                                                margin: 0
+                                            });
+                                            canvas.style.maxWidth = "100%";
+                                            canvas.style.height = "auto";
+                                            visualContainer.appendChild(canvas);
+                                        } catch (e) {
+                                            visualContainer.innerHTML = `<span class="text-red-500 text-xs">错误</span>`;
+                                        }
+                                    }
+                                } else {
+                                    if (typeof QRCode === 'undefined') {
+                                        visualContainer.innerHTML = `<span class="text-red-500 text-xs">二维码库未加载</span>`;
+                                    } else {
+                                        const qrDiv = document.createElement('div');
+                                        qrDiv.className = 'qr';
+                                        try {
+                                        const qrSize = sizeClass === 'size-4x2' ? 80 : 140;
+                                            new QRCode(qrDiv, {
+                                                text: text,
+                                                width: qrSize,
+                                                height: qrSize,
+                                                correctLevel: QRCode.CorrectLevel.M
+                                            });
+                                            visualContainer.appendChild(qrDiv);
+                                        } catch (e) {
+                                            visualContainer.innerHTML = `<span class="text-red-500 text-xs">错误</span>`;
+                                        }
+                                    }
+                                }
+
+                                const codeText = document.createElement('div');
+                                codeText.className = "compact-code-text";
+                                codeText.innerText = text;
+
+                                codeBox.appendChild(visualContainer);
+                                codeBox.appendChild(codeText);
+                                compactGrid.appendChild(codeBox);
+                            });
+
+                            innerDiv.appendChild(compactGrid);
+
+                            // 如果有额外文本则放在底部（每页显示）
+                            if (extraTextValue) {
+                                const footerDiv = document.createElement('div');
+                                footerDiv.className = "w-full text-center";
+                                const extraTextEl = document.createElement('div');
+                                extraTextEl.innerText = extraTextValue;
+                                extraTextEl.className = "label-extra-text text-gray-700 break-words leading-relaxed whitespace-pre-line";
+                                footerDiv.appendChild(extraTextEl);
+                                innerDiv.appendChild(footerDiv);
+                            }
+
+                            labelDiv.appendChild(innerDiv);
+                            container.appendChild(labelDiv);
+                        }
+                        // 合并模式处理完所有 chunk 后直接返回，避免按单独标签继续生成
+                        return;
+                    }
+                }
+                
+                // 处理输入数据
+                let lines = inputValue.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line !== '');
+
+                // 如果没有条码/二维码数据，但填写了标题或额外文本，则生成一个纯文字标签
+                if (lines.length === 0) {
+                    if (titleValue || extraTextValue) {
+                        lines = ['__NO_CODE__']; // 占位，后面不生成条码/二维码
+                    } else {
+                        container.innerHTML = `
+                            <div class="text-gray-400 mt-32 flex flex-col items-center no-print">
+                                <svg class="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                                <span>请在左侧输入数据...</span>
+                            </div>`;
+                        return;
+                    }
+                }
+                
+                // 确保容器可见
+                container.style.display = 'flex';
+                container.style.visibility = 'visible';
+
+                // 生成标签（分开模式或不满足合并条件）
+                lines.forEach((text, index) => {
+                    const isPlaceholder = (text === '__NO_CODE__');
+                    try {
+                        const labelDiv = document.createElement('div');
+                        labelDiv.className = `label-item ${sizeClass} shadow-md`;
+                        
+                        const innerDiv = document.createElement('div');
+                        innerDiv.className = "label-content w-full h-full box-border";
+                        
+                        // 顶部标题区域
+                        const headerDiv = document.createElement('div');
+                        headerDiv.className = "w-full text-center";
+                        if (titleValue) {
+                            const titleEl = document.createElement('div');
+                            titleEl.innerText = titleValue;
+                            titleEl.className = "label-title font-bold text-gray-900 break-words leading-tight mb-2";
+                            headerDiv.appendChild(titleEl);
+                        }
+                        innerDiv.appendChild(headerDiv);
+
+                        // 中间码区域 - 占据剩余空间
+                        const codeContainer = document.createElement('div');
+                        codeContainer.className = "flex-1 flex items-center justify-center w-full overflow-hidden";
+                        codeContainer.style.minHeight = sizeClass === 'size-4x2' ? '30px' : '100px';
+                        
+                        // 底部区域 - 包含条码文本和额外文本
+                        const footerDiv = document.createElement('div');
+                        footerDiv.className = "w-full text-center";
+                        
+                        // 条码/二维码文本（仅当有真实数据时显示）
+                        if (!isPlaceholder) {
+                            const codeText = document.createElement('div');
+                            codeText.innerText = text;
+                            codeText.className = "label-code-text font-mono font-semibold text-gray-600 tracking-wider break-all";
+                            footerDiv.appendChild(codeText);
+                        }
+                        
+                        // 额外文本
+                        if (extraTextValue) {
+                            const extraTextEl = document.createElement('div');
+                            extraTextEl.innerText = extraTextValue;
+                            extraTextEl.className = "label-extra-text text-gray-700 break-words leading-relaxed whitespace-pre-line";
+                            footerDiv.appendChild(extraTextEl);
+                        }
+
+                        // 生成条码或二维码（占位模式下不生成码，只保留布局）
+                        if (!isPlaceholder) {
+                            if (currentType === 'barcode') {
+                                if (typeof JsBarcode === 'undefined') {
+                                    codeContainer.innerHTML = `<span class="text-red-500 text-xs">条码库未加载，请刷新页面</span>`;
+                                    console.error('JsBarcode 未定义');
+                                } else {
+                                    const canvas = document.createElement('canvas');
+                                    try {
+                                        const barHeight = sizeClass === 'size-4x2' ? 40 : 80;
+                                        JsBarcode(canvas, text, {
+                                            format: "CODE128",
+                                            width: 2,
+                                            height: barHeight,
+                                            displayValue: false,
+                                            margin: 0
+                                        });
+                                        canvas.style.maxWidth = "100%";
+                                        canvas.style.height = "auto";
+                                        codeContainer.appendChild(canvas);
+                                        console.log('条码生成成功:', text);
+                                    } catch (e) {
+                                        console.error('条码生成错误:', e);
+                                        codeContainer.innerHTML = `<span class="text-red-500 text-xs">错误: ${e.message || '无效字符'}</span>`;
+                                    }
+                                }
+                            } else {
+                                if (typeof QRCode === 'undefined') {
+                                    codeContainer.innerHTML = `<span class="text-red-500 text-xs">二维码库未加载，请刷新页面</span>`;
+                                    console.error('QRCode 未定义');
+                                } else {
+                                    const qrDiv = document.createElement('div');
+                                    codeContainer.appendChild(qrDiv);
+                                    const qrSize = sizeClass === 'size-4x2' ? 80 : 180;
+                                    
+                                    try {
+                                        // 清空可能存在的旧内容
+                                        qrDiv.innerHTML = '';
+                                        new QRCode(qrDiv, {
+                                            text: text,
+                                            width: qrSize,
+                                            height: qrSize,
+                                            correctLevel: QRCode.CorrectLevel.M
+                                        });
+                                        console.log('二维码生成成功:', text);
+                                    } catch (e) {
+                                        console.error('二维码生成错误:', e);
+                                        codeContainer.innerHTML = `<span class="text-red-500 text-xs">错误: ${e.message || '生成失败'}</span>`;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 先添加码区域，再添加底部文本，避免 insertBefore 目标节点尚未在 DOM 中导致错误
+                        innerDiv.appendChild(codeContainer);
+                        innerDiv.appendChild(footerDiv);
+                        labelDiv.appendChild(innerDiv);
+                        container.appendChild(labelDiv);
+                    } catch (e) {
+                        console.error('生成标签错误:', e);
+                    }
+                });
+            } catch (e) {
+                console.error('渲染标签错误:', e);
+                const container = document.getElementById('previewArea');
+                if (container) {
+                    container.innerHTML = `<div class="text-red-500 p-4">渲染错误: ${e.message}</div>`;
+                }
+            }
+        }
+
+        // 页面加载完成后初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                waitForLibraries(init);
+            });
+        } else {
+            waitForLibraries(init);
+        }
+    </script>
+</body>
+</html>
